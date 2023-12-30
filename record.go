@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"time"
 
+	"github.com/livekit/protocol/livekit"
 	lksdk "github.com/livekit/server-sdk-go"
 )
 
@@ -14,10 +17,14 @@ var (
 	defaultLayout = "speaker"
 )
 
+type result struct {
+	Error   string `json:"error"`
+	Message string `json:"msg"`
+}
+
 type recording struct {
 	Room         string
 	Started      time.Time
-	StartedBy    string
 	ShareType    int
 	FileName     string
 	EgressID     string
@@ -25,33 +32,10 @@ type recording struct {
 }
 
 func newRecordingName(room, shareWith string) string {
-	return fmt.Sprintf("recording-%s-%s-%s.ogg", room, randomToken(8), shareWith)
+	return fmt.Sprintf("recordings/recording-%s-%s-%s.ogg", room, randomToken(8), shareWith)
 }
 
-func handleRecordStart(e echo.Context) error {
-	queryParams := c.QueryParams()
-
-	room := queryParams.Get("room")
-	shareWith := queryParams.Get("shareWith")
-
-	var res result
-
-	rec, err := startRecording(room, shareWith)
-	if err != nil {
-		log.Println("error:", err.Error())
-		res = result{Error: "cannot start recording, check logs"}
-	} else {
-		// this allows us to avoid other users from stopping the recording
-		rec.StartedBy = user
-		liveRecordings = append(liveRecordings, rec)
-		log.Println("Started recording:", rec.FileName)
-		res = result{Message: "ok"}
-	}
-
-	return c.JSON(http.StatusOK, res)
-
 func startRecording(room, shareWith string) (*recording, error) {
-
 	livekitAPIKey := os.Getenv("LIVEKIT_API_KEY")
 	livekitSecretKey := os.Getenv("LIVEKIT_API_SECRET")
 	livekitInstance := os.Getenv("LIVEKIT_INSTANCE")
@@ -62,26 +46,28 @@ func startRecording(room, shareWith string) (*recording, error) {
 	s3Key := os.Getenv("S3_KEY")
 	s3Secret := os.Getenv("S3_SECRET")
 
-	if apiKey == "" || secretKey == "" {
-		log.Fatal("missing LK_API_KEY or LK_API_SECRET")
+	if livekitAPIKey == "" || livekitSecretKey == "" {
+		log.Fatal("missing LIVEKIT_API_KEY or LIVEKIT_API_SECRET")
 	}
 
 	egressClient := lksdk.NewEgressClient(livekitURL, livekitAPIKey, livekitSecretKey)
 	fileName := newRecordingName(room, shareWith)
 	fileRequest := &livekit.RoomCompositeEgressRequest{
 		RoomName:  room,
-		Layout:    "speaker",
+		Layout:    defaultLayout,
 		AudioOnly: true,
 		Output: &livekit.RoomCompositeEgressRequest_File{
 			File: &livekit.EncodedFileOutput{
-				FileType: livekit.EncodedFileType_MP4,
+				FileType: livekit.EncodedFileType_OGG,
 				Filepath: fileName,
 				Output: &livekit.EncodedFileOutput_S3{
 					S3: &livekit.S3Upload{
-						AccessKey: s3Key,
-						Secret:    s3Secret,
-						Region:    s3Endpoint,
-						Bucket:    s3Bucekt,
+						AccessKey:      s3Key,
+						Secret:         s3Secret,
+						Endpoint:       s3Endpoint,
+						Bucket:         s3Bucket,
+						Region:         "any",
+						ForcePathStyle: true,
 					},
 				},
 			},
@@ -97,7 +83,7 @@ func startRecording(room, shareWith string) (*recording, error) {
 	}
 
 	rec := &recording{
-		EgressID:     info.EgressID,
+		EgressID:     info.EgressId,
 		EgressClient: egressClient,
 		FileName:     fileName,
 		Room:         room,
@@ -109,11 +95,11 @@ func startRecording(room, shareWith string) (*recording, error) {
 func stopRecording(room string) error {
 	livekitInstance := os.Getenv("LIVEKIT_INSTANCE")
 	livekitURL := fmt.Sprintf("https://%s", livekitInstance)
-	apiKey := os.Getenv("LK_API_KEY")
-	secretKey := os.Getenv("LK_API_SECRET")
+	livekitAPIKey := os.Getenv("LIVEKIT_API_KEY")
+	livekitSecretKey := os.Getenv("LIVEKIT_API_SECRET")
 
-	if apiKey == "" || secretKey == "" {
-		log.Fatal("missing LK_API_KEY or LK_API_SECRET")
+	if livekitAPIKey == "" || livekitSecretKey == "" {
+		log.Fatal("missing LIVEKIT_API_KEY or LK_API_SECRET")
 	}
 
 	ctx := context.Background()
@@ -122,12 +108,13 @@ func stopRecording(room string) error {
 			log.Println("trying to stop", rec.EgressID)
 
 			egressClient := lksdk.NewEgressClient(
-				livekitURL, apiKey, secretKey)
+				livekitURL, livekitAPIKey, livekitSecretKey)
 
 			_, err := egressClient.StopEgress(ctx, &livekit.StopEgressRequest{
 				EgressId: rec.EgressID,
 			})
 			if err != nil {
+				log.Println("error stopping egress")
 				log.Println(err)
 			}
 			return nil

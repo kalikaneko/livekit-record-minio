@@ -3,7 +3,9 @@ module github.com/kalikaneko/livekit-record-minio
 go 1.21.5
 
 require (
+	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo v3.3.10+incompatible
+	github.com/livekit/protocol v1.9.3
 	github.com/livekit/server-sdk-go v1.1.4
 )
 
@@ -30,7 +32,6 @@ require (
 	github.com/lithammer/shortuuid/v4 v4.0.0 // indirect
 	github.com/livekit/mageutil v0.0.0-20230125210925-54e8a70427c1 // indirect
 	github.com/livekit/mediatransportutil v0.0.0-20231130090133-bd1456add80a // indirect
-	github.com/livekit/protocol v1.9.3 // indirect
 	github.com/livekit/psrpc v0.5.2 // indirect
 	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/magefile/mage v1.15.0 // indirect
