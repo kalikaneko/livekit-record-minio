@@ -93,7 +93,7 @@ If you're using django, you might want to use [django-livekit-api](https://githu
 
 ## Minio installation & config 
 
-Follow instructions to install [minio](https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-single-drive.html#minio-snsd]
+Follow instructions to install [minio](https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-single-drive.html#minio-snsd)
 
 ```
 wget https://dl.min.io/server/minio/release/linux-amd64/archive/minio_20231223071911.0.0_amd64.deb -O minio.deb
