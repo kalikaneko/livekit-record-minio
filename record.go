@@ -1,4 +1,4 @@
-package main
+package livekitminio
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/livekit/protocol/livekit"
@@ -17,12 +18,19 @@ var (
 	defaultLayout = "speaker"
 )
 
-type result struct {
-	Error   string `json:"error"`
-	Message string `json:"msg"`
+type Session struct {
+	liveRecordings []*Recording
+	mu             *sync.Mutex
 }
 
-type recording struct {
+func NewSession() *Session {
+	return &Session{
+		liveRecordings: make([]*Recording, 0),
+		mu:             &sync.Mutex{},
+	}
+}
+
+type Recording struct {
 	Room         string
 	Started      time.Time
 	ShareType    int
@@ -31,11 +39,7 @@ type recording struct {
 	EgressClient *lksdk.EgressClient
 }
 
-func newRecordingName(room, shareWith string) string {
-	return fmt.Sprintf("recordings/recording-%s-%s-%s.ogg", room, randomToken(8), shareWith)
-}
-
-func startRecording(room, shareWith string) (*recording, error) {
+func (s *Session) StartRecording(room, shareWith string) (*Recording, error) {
 	livekitAPIKey := os.Getenv("LIVEKIT_API_KEY")
 	livekitSecretKey := os.Getenv("LIVEKIT_API_SECRET")
 	livekitInstance := os.Getenv("LIVEKIT_INSTANCE")
@@ -72,8 +76,6 @@ func startRecording(room, shareWith string) (*recording, error) {
 				},
 			},
 		},
-		// uncomment to use your own templates
-		// CustomBaseUrl: "https://my-custom-template.com",
 	}
 
 	ctx := context.Background()
@@ -82,17 +84,24 @@ func startRecording(room, shareWith string) (*recording, error) {
 		return nil, err
 	}
 
-	rec := &recording{
+	rec := &Recording{
 		EgressID:     info.EgressId,
 		EgressClient: egressClient,
 		FileName:     fileName,
 		Room:         room,
 		Started:      time.Now(),
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.liveRecordings = append(s.liveRecordings, rec)
+	log.Println("Started recording:", rec.FileName)
+
 	return rec, nil
 }
 
-func stopRecording(room string) error {
+func (s *Session) StopRecording(room string) error {
 	livekitInstance := os.Getenv("LIVEKIT_INSTANCE")
 	livekitURL := fmt.Sprintf("https://%s", livekitInstance)
 	livekitAPIKey := os.Getenv("LIVEKIT_API_KEY")
@@ -102,8 +111,12 @@ func stopRecording(room string) error {
 		log.Fatal("missing LIVEKIT_API_KEY or LK_API_SECRET")
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	ctx := context.Background()
-	for _, rec := range liveRecordings {
+	log.Println("there are", len(s.liveRecordings), "live recordings")
+	for _, rec := range s.liveRecordings {
 		if rec.Room == room {
 			log.Println("trying to stop", rec.EgressID)
 
@@ -123,13 +136,20 @@ func stopRecording(room string) error {
 	return errors.New("cannot find recording for room:" + room)
 }
 
-func unlistRecordingForRoom(room string) {
-	for i, rec := range liveRecordings {
+func (s *Session) UnlistRecordingForRoom(room string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, rec := range s.liveRecordings {
 		if rec.Room == room {
 			log.Println("remove live recording for room", room)
-			liveRecordings = append(liveRecordings[:i], liveRecordings[i+1:]...)
+			s.liveRecordings = append(s.liveRecordings[:i], s.liveRecordings[i+1:]...)
 		}
 	}
+}
+
+func newRecordingName(room, shareWith string) string {
+	return fmt.Sprintf("recordings/recording-%s-%s-%s.ogg", room, randomToken(8), shareWith)
 }
 
 func randomToken(length int) string {

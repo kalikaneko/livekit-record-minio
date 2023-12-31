@@ -1,4 +1,5 @@
-livekit-record-minio
+livekit-minio
+minio-hook
 .env
 *.swp
 *.swo
